@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Simulación 3D - Sólido de Revolución</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #fff; }
+        #panel { position: absolute; top: 15px; left: 15px; background: rgba(0, 0, 0, 0.85); padding: 20px; border-radius: 12px; max-width: 320px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        h2 { margin-top: 0; font-size: 1.2rem; color: #00d2d3; }
+        p { margin: 5px 0; font-size: 0.9rem; }
+        .control { margin-top: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.85rem; }
+        input[type=range] { width: 100%; cursor: pointer; }
+        .highlight { color: #ff9ff3; font-weight: bold; }
+    </style>
+    <!-- Carga de Three.js y OrbitControls desde CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <div id="panel">
+        <h2>Sólido de Revolución</h2>
+        <p><b>f(x) = 6x - x²</b> (Superior)</p>
+        <p><b>g(x) = x² + 2x</b> (Inferior)</p>
+        <p>Límites: <span class="highlight">x ∈ [1]</span></p>
+        <p>Eje de rotación: <span class="highlight">Eje Y (x = 0)</span></p>
+        <hr style="border-color: #333; margin: 12px 0;">
+        <p><b>Radio:</b> r(x) = x</p>
+        <p><b>Altura:</b> h(x) = 4x - 2x²</p>
+        <div class="control">
+            <label for="angle">Ángulo de rotación: <span id="angleVal" class="highlight">360</span>°</label>
+            <input type="range" id="angle" min="5" max="360" value="360">
+        </div>
+    </div>
+
+    <script>
+        // Configuración de la escena
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x121212);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(6, 8, 12);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // Iluminación
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(10, 20, 10);
+        scene.add(dirLight);
+
+        // Ejes de coordenadas (X: Rojo, Y: Verde, Z: Azul)
+        const axesHelper = new THREE.AxesHelper(7);
+        scene.add(axesHelper);
+
+        // Funciones del problema
+        const f = x => 6 * x - x * x;
+        const g = x => x * x + 2 * x;
+
+        let solidMesh = null;
+
+        function buildSolid(maxAngleDeg) {
+            if (solidMesh) scene.remove(solidMesh);
+
+            const maxAngle = (maxAngleDeg * Math.PI) / 180;
+            const xSegments = 40;
+            const thetaSegments = Math.max(4, Math.floor((maxAngleDeg / 360) * 60));
+
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+            const indices = [];
+
+            for (let i = 0; i <= xSegments; i++) {
+                const x = (i / xSegments) * 2; // de x = 0 a x = 2
+                const yTop = f(x);
+                const yBot = g(x);
+
+                for (let j = 0; j <= thetaSegments; j++) {
+                    const theta = (j / thetaSegments) * maxAngle;
+                    const cosT = Math.cos(theta);
+                    const sinT = Math.sin(theta);
+
+                    // Puntos en 3D rotados sobre el eje Y
+                    vertices.push(x * cosT, yTop, x * sinT);
+                    vertices.push(x * cosT, yBot, x * sinT);
+                }
+            }
+
+            const stride = (thetaSegments + 1) * 2;
+
+            for (let i = 0; i < xSegments; i++) {
+                for (let j = 0; j < thetaSegments; j++) {
+                    const a = i * stride + j * 2;
+                    const b = a + 1;
+                    const c = a + 2;
+                    const d = b + 2;
+
+                    const aNext = (i + 1) * stride + j * 2;
+                    const bNext = aNext + 1;
+                    const cNext = aNext + 2;
+
+                    // Malla exterior e interior
+                    indices.push(a, cNext, c);
+                    indices.push(a, aNext, cNext);
+                    indices.push(b, c + 1, cNext + 1);
+                    indices.push(b, bNext, cNext + 1);
+                    indices.push(a, c, c + 1);
+                    indices.push(a, c + 1, b);
+                }
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setIndex(indices);
+            geometry.computeVertexNormals();
+
+            const material = new THREE.MeshPhongMaterial({
+                color: 0x00d2d3,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.85,
+                shininess: 90
+            });
+
+            solidMesh = new THREE.Mesh(geometry, material);
+            scene.add(solidMesh);
+        }
+
+        buildSolid(360);
+
+        // Control interactivo del ángulo
+        const slider = document.getElementById('angle');
+        const angleVal = document.getElementById('angleVal');
+        slider.addEventListener('input', (e) => {
+            const val = e.target.value;
+            angleVal.innerText = val;
+            buildSolid(parseFloat(val));
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
